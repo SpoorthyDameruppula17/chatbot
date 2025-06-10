@@ -1,17 +1,17 @@
-# Use Node.js base image
-FROM node:18-alpine
-
-# Install http-server globally
-RUN npm install -g http-server
+# Use lightweight web server image
+FROM node:alpine
 
 # Create app directory
 WORKDIR /app
 
-# Copy all project files
+# Copy all chatbot files into the container
 COPY . .
 
-# Expose port 8080
+# Install http-server
+RUN npm install -g http-server
+
+# Expose port
 EXPOSE 8080
 
-# Serve files using http-server
-CMD ["http-server", ".", "-p", "8080"]
+# Start server
+CMD ["http-server", "-p", "8080"]
