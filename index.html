@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AskAinexa Chatbot</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      background: #f0f2f5;
+    }
+
+    #chat-container {
+      position: fixed;
+      bottom: 10%;
+      right: 5%;
+      width: 90vw;
+      max-width: 400px;
+      height: 60vh;
+      max-height: 80vh;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 1rem;
+      border-radius: 1rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      visibility: hidden;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    #chat-container.visible {
+      visibility: visible;
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    #chat-container.hidden {
+      visibility: hidden;
+      transform: translateY(10px);
+      opacity: 0;
+    }
+
+    #chat-history {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      background: #f8fafc;
+      border-radius: 0.5rem;
+    }
+
+    .message {
+      margin: 0.5rem 0;
+      padding: 0.6rem 0.9rem;
+      border-radius: 0.75rem;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      max-width: 85%;
+      word-wrap: break-word;
+    }
+
+    .user-message {
+      background: #4f46e5;
+      color: #ffffff;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .agent-message {
+      background: #e2e8f0;
+      color: #1a1a1a;
+      margin-right: auto;
+      text-align: left;
+    }
+
+    .timestamp {
+      font-size: 0.65rem;
+      color: #64748b;
+      margin-top: 0.2rem;
+      display: block;
+    }
+
+    #input-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      background: #f8fafc;
+      border-radius: 0.5rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    #user-input {
+      flex: 1;
+      padding: 0.6rem;
+      border: none;
+      background: transparent;
+      color: #1a1a1a;
+      font-family: 'Inter', sans-serif;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    #send-button {
+      padding: 0.5rem 1rem;
+      background: #4f46e5;
+      color: #ffffff;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    #send-button:hover {
+      background: #4338ca;
+    }
+
+    #mic-button {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      color: #4f46e5;
+    }
+
+    #chat-toggle {
+      position: fixed;
+      bottom: 5%;
+      right: 5%;
+      background: #4f46e5;
+      padding: 0.75rem;
+      border-radius: 50%;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      color: #ffffff;
+      cursor: pointer;
+      z-index: 1001;
+      transition: transform 0.3s ease;
+    }
+
+    #chat-toggle:hover {
+      transform: scale(1.1);
+    }
+
+    @media (max-width: 600px) {
+      #chat-container {
+        width: 95vw;
+        height: 55vh;
+        bottom: 12%;
+        right: 2.5%;
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="chat-toggle" onclick="toggleChat()">💬</div>
+
+<div id="chat-container" class="hidden">
+  <h3 style="margin: 0 0 1rem; font-size: 1rem; font-weight: 600;">AskAinexa</h3>
+  <div id="chat-history"></div>
+  <div id="input-container">
+    <input type="text" id="user-input" placeholder="Ask about Ainexa...">
+    <button id="mic-button" title="Speak">🎤</button>
+    <button id="send-button" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script type="module">
+  let history = [{
+    assistant: "Welcome to Ainexa! I'm AskAinexa, your AI assistant. How can I help you today?",
+    timestamp: new Date().toLocaleTimeString()
+  }];
+  let companyData = [];
+  let embedder;
+
+  async function init() {
+    try {
+      const response = await fetch('company_data/company_data.json');
+      companyData = await response.json();
+      const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+      embedder = await pipeline('feature-extraction', 'Xenova/all-mpnet-base-v2');
+    } catch (error) {
+      history.push({ assistant: "Sorry, I couldn't load some data. But I'm still here to help!", timestamp: new Date().toLocaleTimeString() });
+      updateChatHistory();
+    }
+    updateChatHistory();
+  }
+
+  function toggleChat() {
+    const container = document.getElementById("chat-container");
+    container.classList.toggle("visible");
+    container.classList.toggle("hidden");
+  }
+
+  async function searchKnowledgeBase(query) {
+    try {
+      const queryEmbedding = (await embedder(query, { pooling: 'mean', normalize: true }))[0];
+      const scores = companyData.map(item => ({
+        text: item.text,
+        score: item.embedding.reduce((sum, a, i) => sum + a * queryEmbedding[i], 0)
+      }));
+      return scores.sort((a, b) => b.score - a.score).slice(0, 5).map(item => item.text).join("\n");
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function buildPrompt(context, query, chatHistory) {
+    const historyText = chatHistory.map(h => `User: ${h.user || ''}\nAssistant: ${h.assistant || ''}`).join("\n");
+    return `
+      You are AskAinexa's AI assistant, trained with company knowledge.
+      Be clear, concise, professional, and friendly. If unsure, say: "I'm not certain, but I can connect you with our team."
+      Previous chat history:
+      ${historyText}
+      Company Knowledge:
+      ${context}
+      Current Question:
+      ${query}
+      Only provide contact info if explicitly asked: General: contact@ainexa.in, HR: hr@ainexa.in, Website: www.ainexa.in
+    `;
+  }
+
+  async function sendMessage() {
+    const inputElem = document.getElementById("user-input");
+    const input = inputElem.value.trim();
+    if (!input) return;
+
+    // Remove "You: Typing..." or "You: Speaking..." before sending actual message
+    const typingIndex = history.findIndex(h => h.assistant === "Typing..." || h.assistant === "Speaking...");
+    if (typingIndex > -1) history.splice(typingIndex, 1);
+
+    // Add the user input to history
+    history.push({ user: input, timestamp: new Date().toLocaleTimeString() });
+    updateChatHistory();
+
+    try {
+      const context = await searchKnowledgeBase(input);
+      const prompt = buildPrompt(context, input, history);
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer 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`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.5
+        })
+      });
+
+      const data = await response.json();
+      const reply = data.choices[0].message.content.trim();
+      const replyTime = new Date().toLocaleTimeString();
+      history.push({ assistant: reply, timestamp: replyTime });
+      updateChatHistory(true);
+    } catch (err) {
+      history.push({ assistant: "Sorry, something went wrong. Please try again.", timestamp: new Date().toLocaleTimeString() });
+      updateChatHistory();
+    }
+    inputElem.value = "";
+  }
+
+  function updateChatHistory() {
+    const chatHistory = document.getElementById("chat-history");
+    chatHistory.innerHTML = history.map(h =>
+      h.user
+        ? `<div class="message user-message"><b>You:</b> ${h.user}<span class="timestamp">${h.timestamp}</span></div>`
+        : h.assistant === "Typing..."
+        ? `<div class="message typing-message user-message"><b>You:</b> ${h.assistant}<span class="timestamp">${h.timestamp}</span></div>`
+        : h.assistant === "Speaking..."
+        ? `<div class="message speaking-message user-message"><b>You:</b> ${h.assistant}<span class="timestamp">${h.timestamp}</span></div>`
+        : `<div class="message agent-message"><b>AskAinexa:</b> <span class="agent-reply">${h.assistant}</span><span class="timestamp">${h.timestamp}</span></div>`
+    ).join("");
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+  }
+
+  // Speech Recognition Setup
+  const micButton = document.getElementById("mic-button");
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    micButton.addEventListener("click", () => {
+      history.push({ assistant: "Speaking...", timestamp: new Date().toLocaleTimeString() });
+      updateChatHistory();
+      recognition.start();
+    });
+
+    recognition.onresult = event => {
+      const transcript = event.results[0][0].transcript.trim();
+      document.getElementById("user-input").value = transcript;
+      sendMessage();
+    };
+
+    recognition.onerror = event => {
+      alert("Mic error: " + event.error);
+    };
+  } else {
+    micButton.disabled = true;
+    micButton.title = "Speech recognition not supported";
+  }
+
+  // Typing detection
+  const userInputElem = document.getElementById("user-input");
+
+  userInputElem.addEventListener("input", () => {
+    if (userInputElem.value.trim()) {
+      // Show "You: Typing..." if the user is typing
+      const lastMessage = history[history.length - 1];
+      if (lastMessage.assistant !== "Typing...") {
+        history.push({ assistant: "Typing...", timestamp: new Date().toLocaleTimeString() });
+        updateChatHistory();
+      }
+    } else {
+      // If the input is cleared, remove "You: Typing..."
+      const typingIndex = history.findIndex(h => h.assistant === "Typing...");
+      if (typingIndex > -1) history.splice(typingIndex, 1);
+      updateChatHistory();
+    }
+  });
+
+  userInputElem.addEventListener("blur", () => {
+    // If the input box is blurred, remove "You: Typing..."
+    const typingIndex = history.findIndex(h => h.assistant === "Typing...");
+    if (typingIndex > -1) history.splice(typingIndex, 1);
+    updateChatHistory();
+  });
+
+  document.getElementById("user-input").addEventListener("keypress", e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  window.toggleChat = toggleChat;
+  window.sendMessage = sendMessage;
+  init();
+</script>
+</body>
+</html>
