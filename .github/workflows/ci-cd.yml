@@ -26,4 +26,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: your-dockerhub-username/chatbot:latest
+          tags: spoorthydameruppula17/chatbot:latest
